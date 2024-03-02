@@ -1,4 +1,4 @@
-# hash:sha256:7b34fd1536cab8e6e9fed790a7a56092faf7e6ec3c18ba25ad67c2af0a525f1e
+# hash:sha256:f866064c2926b783c2e341eceb9045a6f981b0c3b7a19d4593abed4e96ccc697
 FROM registry.codeocean.allenneuraldynamics.org/codeocean/jupyterlab:3.6.1-miniconda4.12.0-python3.9-ubuntu20.04
 
 ARG DEBIAN_FRONTEND=noninteractive
@@ -8,10 +8,11 @@ ARG GIT_ACCESS_TOKEN
 COPY git-askpass /
 
 RUN conda install -y \
-        matplotlib \
-        numpy \
-        os \
-        pandas \
-        pynwb \
-        seaborn \
+        matplotlib==3.8.0 \
+        numpy==1.26.4 \
+        pandas==2.1.4 \
     && conda clean -ya
+
+RUN pip install -U --no-cache-dir \
+    pynwb==2.6.0 \
+    seaborn==0.13.2
