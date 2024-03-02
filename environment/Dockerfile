@@ -1,5 +1,5 @@
-# hash:sha256:000d95f6098fddbd500a3739602efd69ae36873fe312e17588f6663bb21bcbb0
-FROM registry.codeocean.allenneuraldynamics.org/codeocean/jupyterlab:3.4.4-miniconda4.12.0-python3.9-ubuntu20.04
+# hash:sha256:7b34fd1536cab8e6e9fed790a7a56092faf7e6ec3c18ba25ad67c2af0a525f1e
+FROM registry.codeocean.allenneuraldynamics.org/codeocean/jupyterlab:3.6.1-miniconda4.12.0-python3.9-ubuntu20.04
 
 ARG DEBIAN_FRONTEND=noninteractive
 
@@ -7,24 +7,11 @@ ARG GIT_ASKPASS
 ARG GIT_ACCESS_TOKEN
 COPY git-askpass /
 
-RUN pip install -U --no-cache-dir \
-    matplotlib==3.7.1 \
-    pandas==2.0.1 \
-    plotly==5.15.0 \
-    pynwb==2.3.2 \
-    seaborn==0.12.2 \
-    xarray==2023.4.2 \
-    zarr==2.14.2 \
-    ipykernel \
-    s3fs \
-    awscli
-
-ADD "https://github.com/coder/code-server/releases/download/v4.9.0/code-server-4.9.0-linux-amd64.tar.gz" /.code-server/code-server.tar.gz
-	
-RUN cd /.code-server \
-	&& tar -xvf code-server.tar.gz \
-	&& rm code-server.tar.gz \
-	&& ln -s /.code-server/code-server-4.9.0-linux-amd64/bin/code-server  /usr/bin/code-server
-
-COPY postInstall /
-RUN /postInstall
+RUN conda install -y \
+        matplotlib \
+        numpy \
+        os \
+        pandas \
+        pynwb \
+        seaborn \
+    && conda clean -ya
