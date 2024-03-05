@@ -11,7 +11,7 @@ from pathlib import Path
 import json
 from matplotlib import pyplot as plt
 
-from analysis.util import foraging_eff_baiting, foraging_eff_no_baiting
+from analysis_util import foraging_eff_baiting, foraging_eff_no_baiting
 from plot.foraging_matplotlib import plot_session_lightweight
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
