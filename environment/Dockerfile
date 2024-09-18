@@ -1,4 +1,4 @@
-# hash:sha256:0950964f02d7164c0183d4d4d6263b4cae55556f49ba3d93a191b70adbc7ccd7
+# hash:sha256:9203af8d29f83d928c15b3df94bf7cb48b5bac684ae71c27f17da62002f46eb0
 ARG REGISTRY_HOST
 FROM $REGISTRY_HOST/codeocean/jupyterlab:3.6.1-miniconda4.12.0-python3.9-ubuntu20.04
 
@@ -14,7 +14,7 @@ RUN conda install -y \
         pandas==2.1.4 \
         plotly==5.19.0 \
         s3fs==2023.10.0 \
-        sklearn \
+        scikit-learn \
     && conda clean -ya
 
 RUN pip install -U --no-cache-dir \
