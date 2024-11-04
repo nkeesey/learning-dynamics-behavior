@@ -1,0 +1,406 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import statsmodels.api as sm
+import os
+from scipy import stats
+import seaborn as sns
+
+def filter_by_group_size(df, group_col='subject_id', max_rows=None, category_col=None, category_limits=None, category_max=None):
+    """ 
+    Filter DataFrame by number of rows globally or by specified categorical column: 
+
+    Params:
+    df (DataFrame): Input DataFrame
+    group_col (str): feature to group by 
+    max_rows (int) (optional): Global maximum number of rows allowed per group 
+    category_col (str) (optional): column to filter by 
+    category_limits (dict) (optional): mapping category values to their maximum allowed rows 
+    category_max (int) (optional): maximum number of allowed rows for any given category in column 
+
+    Returns: 
+    df DataFrame: Filtered DataFrame only containing groups with rows <= max_rows
+
+    """ 
+    if category_col is not None:
+        # Get counts per subject/category 
+        group_sizes = df.groupby([group_col, category_col]).size().unstack(fill_value=0)
+        
+        invalid_groups = set()
+        
+        # Check category-specific limits
+        if category_limits is not None:
+            for category, limit in category_limits.items():
+                if category in group_sizes.columns:
+                    # Find groups that exceed limit
+                    over_limit = group_sizes[group_sizes[category] > limit].index
+                    invalid_groups.update(over_limit)
+        
+        # Check global category max limit 
+        if category_max is not None:
+            # For categories not in category_limits, apply max limit
+            for category in group_sizes.columns:
+                if category_limits is None or category not in category_limits:
+                    over_limit = group_sizes[group_sizes[category] > category_max].index
+                    invalid_groups.update(over_limit)
+        
+        # If neither category_limits nor category_max provided, return original df
+        if category_limits is None and category_max is None:
+            return df
+            
+        # Keep only valid groups 
+        valid_groups = set(group_sizes.index) - invalid_groups
+        
+    else:
+        # If no categories set, apply global limit or return original DataFrame
+        if max_rows is None:
+            return df
+        
+        group_sizes = df[group_col].value_counts()
+        valid_groups = group_sizes[group_sizes <= max_rows].index
+    
+    # Filter the dataframe to keep only valid groups
+    filtered_df = df[df[group_col].isin(valid_groups)]
+    
+    return filtered_df
+
+def analyze_session_distribution(df, task_col=None, bins=20, bins_task=40, y_max=None, y_max_task=None):
+    """ 
+    Create DataFrame showing the number of sessions per subject per stage and/or task
+    with proper density-based distribution visualization
+    
+    Params: 
+
+    df: DataFrame
+        Foraging DataFrame with metric, stage features, task features
+    task_col = optional for task DataFrame
+
+    bins (task) = set number of bins for either DataFrame
+    ymax (task) = set manual maximum y axis value, if None default will be used
+        
+    Returns: 
+    tuple : (DataFrame, DataFrame)
+        session_counts: Individual counts per subject
+        summary_stats: Summary statistics of the distribution
+    """
+
+    stage_order = df['current_stage_actual'].unique()
+
+    # Group by subject and stage, and task
+    if task_col:
+        session_counts = (df.groupby(['subject_id', 'current_stage_actual', task_col], observed=True)
+                         .agg({'session': 'count'})
+                         .reset_index()
+                         .rename(columns={'session': 'num_sessions'}))
+    else:
+        session_counts = (df.groupby(['subject_id', 'current_stage_actual'], observed=True)
+                         .agg({'session': 'count'})
+                         .reset_index()
+                         .rename(columns={'session': 'num_sessions'}))
+    
+    # Create density plots
+    plt.figure(figsize=(12, 6))
+    
+    # Create distribution plot and proper normalization
+    if task_col:
+        g = sns.displot(data=session_counts, 
+                    x='num_sessions',
+                    col='current_stage_actual',
+                    row=task_col,
+                    kind='hist',
+                    bins=bins_task,
+                    height=4,
+                    aspect=1.5,
+                    stat='count',
+                    common_norm=False,
+                    kde=True)
+
+        # Adjust x-ticks and y-axis limits for all subplots
+        for ax in g.axes.flat:
+            if y_max is not None:
+                ax.set_ylim(0, y_max)
+    else:
+        g = sns.displot(data=session_counts, 
+                    x='num_sessions',
+                    col='current_stage_actual',
+                    kind='hist',
+                    bins=bins,
+                    height=4,
+                    aspect=1.5,
+                    stat='count',
+                    common_norm=False,
+                    kde=True)
+                    
+        # Adjust x-ticks and y-axis limits for all subplots
+        for ax in g.axes.flat:
+            # Calculate bin edges
+            edges = [rect.get_x() for rect in ax.patches] + [ax.patches[-1].get_x() + ax.patches[-1].get_width()]
+            
+            # Set x-ticks to bin edges
+            ax.set_xticks(edges)
+            ax.tick_params(axis='x', rotation=45)
+            
+            if y_max is not None:
+                ax.set_ylim(0, y_max)
+    
+    if task_col:
+        plt.suptitle('Distribution of Session Counts by Stage and Task', y=1.02)
+    else:
+        plt.suptitle('Distribution of Session Counts by Stage', y=1.02)
+    
+    # Add more detailed statistics
+    if task_col:
+        summary_stats = (session_counts.groupby(['current_stage_actual', task_col], observed=True)
+                        .agg({
+                            'num_sessions': ['count', 'mean', 'std', 'min', 'max', 
+                                           lambda x: x.quantile(0.25),
+                                           lambda x: x.quantile(0.75)]
+                        })
+                        .round(2))
+    else:
+        summary_stats = (session_counts.groupby('current_stage_actual', observed=True)
+                        .agg({
+                            'num_sessions': ['count', 'mean', 'std', 'min', 'max',
+                                           lambda x: x.quantile(0.25),
+                                           lambda x: x.quantile(0.75)]
+                        })
+                        .round(2))
+    
+    summary_stats.columns = ['num_subjects', 'mean_sessions', 'std_sessions', 
+                           'min_sessions', 'max_sessions', 'q25_sessions', 'q75_sessions']
+    summary_stats = summary_stats.reset_index()
+    
+    return session_counts, summary_stats
+
+def split_by_session_threshold(df, session_counts, threshold=None, task_col=None):
+    """ 
+    Split DataFrame based on session count Threshold in STAGE_1
+
+    Params:
+
+    df: DataFrame containing all data
+    session counts: DataFrame containing session counts per subject_id/stage/task
+    threshold: int (optional) based off of prior session count visualization
+    task_col: str (optional) for task DataFrame specification 
+
+    Returns:
+
+    tuple: (DataFrame, DataFrame, int): 
+            slow_df: DataFrame with subjects above threshold
+            fast_df: DataFrame with subjects below threshold
+            threshold_value: threshold (int) used for splitting 
+    """ 
+
+    # Get Stage 1 counts
+    stage_n_counts = session_counts[
+        session_counts['current_stage_actual'] == 'STAGE_FINAL'
+    ].copy()
+
+    # For task DataFrame average across tasks for Stage 1
+    if task_col:
+        stage_n_counts = (stage_n_counts.groupby('subject_id')['num_sessions'].mean().reset_index())
+
+    # Use median if no threshold is provided
+    if threshold is None:
+        threshold_value = stage_n_counts['num_sessions'].median()
+    else:
+        threshold_value = threshold
+
+    # Get subject_ids below and above threshold
+    slow_subjects = stage_n_counts[stage_n_counts['num_sessions'] >= threshold_value]['subject_id'].unique()
+
+    fast_subjects = stage_n_counts[stage_n_counts['num_sessions'] < threshold_value]['subject_id'].unique()
+
+    # Split DataFrame
+    slow_df = df[df['subject_id'].isin(slow_subjects)].copy()
+    fast_df = df[df['subject_id'].isin(fast_subjects)].copy()
+
+    # Summary stats
+    print(f'Threshold value: {threshold_value:.2f} sessions')
+    print(f'Number of slow learners {len(slow_subjects)}')
+    print(f'Number of fast learners {len(fast_subjects)}')
+
+    return slow_df, fast_df, threshold_value
+
+def analyze_splits(df, task_col=None, threshold=None, **kwargs):
+    """
+    Analyze session distributions for both slow and fast session count DataFrames
+
+    params:
+
+    df: DataFrame in original analyze_sessions function
+    task_col: str (optional) for task-specific DataFrame
+    threshold: int (optional) threshold for split calculation
+    **kwargs: additional args
+
+    Returns:
+    tuple: (dict, dict): DataFrames and stats for slow and fast learners
+    """ 
+
+    # First get session counts
+    session_counts, stats = analyze_session_distribution(df, task_col=task_col, **kwargs)
+    
+    # Split the data
+    slow_df, fast_df, threshold_value = split_by_session_threshold(
+        df, session_counts, threshold=threshold, task_col=task_col
+    )
+    
+    # Analyze both splits
+    slow_counts, slow_stats = analyze_session_distribution(slow_df, task_col=task_col, **kwargs)
+    fast_counts, fast_stats = analyze_session_distribution(fast_df, task_col=task_col, **kwargs)
+    
+    return {
+        'slow': {'df': slow_df, 'counts': slow_counts, 'stats': slow_stats},
+        'fast': {'df': fast_df, 'counts': fast_counts, 'stats': fast_stats},
+        'threshold': threshold_value
+    }
+
+def summary_statistics(data_dict):
+    summary_data = []
+
+    for key, array in data_dict.items():
+        non_nan_counts = np.sum(~np.isnan(array), axis=1)
+        
+        Q1 = np.percentile(non_nan_counts, 5)
+        Q3 = np.percentile(non_nan_counts, 95)
+        IQR = Q3 - Q1
+        lower_bound = Q1 - (1.5 * IQR)
+        upper_bound = Q3 + (1.5 * IQR)
+        outliers = non_nan_counts[(non_nan_counts > upper_bound)]
+        
+        if isinstance(key, tuple):
+            stage, task = key
+        else:
+            stage, task = key, "N/A"
+
+        summary_data.append({
+            'Stage': stage,
+            'Task': task,
+            'Array Shape': array.shape,
+            'Mean': np.mean(non_nan_counts),
+            'Std Dev': np.std(non_nan_counts),
+            'Min': np.min(non_nan_counts),
+            'Max': np.max(non_nan_counts),
+            'Outliers': len(outliers)
+        })
+
+    # Create a summary DataFrame
+    summary_df = pd.DataFrame(summary_data)
+
+    return summary_df
+
+def create_stage_arrays(df, stage_col='current_stage_actual', subject_col='subject_id', metric='foraging_eff'):
+    # Get unique stages and subjects
+
+    stages = df[stage_col].unique()
+    subjects = df[subject_col].unique()
+
+    stage_arrays = {}
+
+    for stage in stages:
+        # Filter the dataframe for the current stage
+        stage_df = df[df[stage_col] == stage]
+        
+        # Get the max number of sessions for this stage
+        max_sessions = stage_df.groupby(subject_col).size().max()
+        
+        # For the NaN stage
+        if pd.isna(max_sessions):
+            print(f"No data found for stage {stage}")
+            continue
+        
+        max_sessions = int(max_sessions)
+        
+        stage_array = np.full((len(subjects), max_sessions), np.nan)
+        
+        # Fill the array with metric scores
+        for i, subject in enumerate(subjects):
+            subject_data = stage_df[stage_df[subject_col] == subject][metric].values
+            stage_array[i, :len(subject_data)] = subject_data
+        
+        stage_arrays[stage] = stage_array
+
+    return stage_arrays
+
+def create_stage_task_arrays(df, stage_col='current_stage_actual', subject_col='subject_id', task_col='task', metric='foraging_eff'):
+
+    # Get unique stage, task, subjects 
+    stages = df[stage_col].unique()
+    subjects = df[subject_col].unique()
+    tasks = df[task_col].unique()
+
+    # Initialize new dictionary 
+    stage_task_arrays = {}
+
+    for stage in stages:
+        for task in tasks:
+            # Filter the dataframe for the current stage and task
+            stage_task_df = df[(df[stage_col] == stage) & (df[task_col] == task)]
+            
+            max_sessions = stage_task_df.groupby(subject_col).size().max()
+            
+            # For stages or tasks with no data
+            if pd.isna(max_sessions):
+                print(f"No data found for stage {stage} and task {task}")
+                continue
+            
+            max_sessions = int(max_sessions)
+            
+            stage_task_array = np.full((len(subjects), max_sessions), np.nan)
+            
+            # Fill the array with metric scores
+            for i, subject in enumerate(subjects):
+                subject_data = stage_task_df[stage_task_df[subject_col] == subject][metric].values
+                stage_task_array[i, :len(subject_data)] = subject_data
+            
+            stage_task_arrays[(stage, task)] = stage_task_array
+
+    return stage_task_arrays
+
+
+def remove_outliers_n(data_dict, n):
+    result = {}
+
+    for key, array in data_dict.items():
+
+        if isinstance(key, tuple):
+            stage, task = key
+        else:
+            stage = key
+            task = None
+
+        # Count num of fe values in each row
+        non_nan_counts = np.sum(~np.isnan(array), axis=1)
+        
+        # Sort rows by their fe counts
+        sorted_indices = np.argsort(non_nan_counts)[::-1]
+        sorted_counts = non_nan_counts[sorted_indices]
+        
+        # Find the cutoff point
+        if len(sorted_counts) > n:
+            cutoff = sorted_counts[n]
+        else:
+            cutoff = sorted_counts[-1]
+        
+        # Create a mask for rows to keep
+        keep_mask = non_nan_counts <= cutoff
+        
+        # Create make for rows to trim
+        trim_mask = non_nan_counts > cutoff
+        
+        new_array = np.full((array.shape[0], cutoff), np.nan)
+        
+        # Fill in the rows that are kept
+        new_array[keep_mask] = array[keep_mask][:, :cutoff]
+        
+        # Fill in the trimmed rows
+        for i in np.where(trim_mask)[0]:
+            non_nan_indices = np.where(~np.isnan(array[i]))[0][:cutoff]
+            new_array[i, :len(non_nan_indices)] = array[i, non_nan_indices]
+        
+        if task is not None:
+            result[(stage, task)] = new_array
+        else:
+            result[stage] = new_array
+    
+    return result
