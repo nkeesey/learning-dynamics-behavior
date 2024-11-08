@@ -89,3 +89,210 @@ def filter_by_column(df: pd.DataFrame, column: str) -> dict:
 
     return split_dfs
 
+def merge_dataframes_subject_id(df1, df2):
+    """ 
+    Merge two DataFrames on subject_id and session_date columns
+
+    Params:
+
+    df1, df2 (DataFrame): DataFrames to merge
+
+    Returns:
+
+    merged_df (DataFrame): Merged DataFrame
+    """
+
+    merged_df = pd.merge(df1, df2, on=['subject_id', 'session_date'], how='inner')
+
+    return merged_df
+
+def analyze_session_distribution(df, task_col=None, bins=20, bins_task=40, y_max=None, y_max_task=None):
+    """ 
+    Create DataFrame showing the number of sessions per subject per stage and/or task
+    with proper density-based distribution visualization
+    
+    Params: 
+
+    df: DataFrame
+        Foraging DataFrame with metric, stage features, task features
+    task_col = optional for task DataFrame
+
+    bins (task) = set number of bins for either DataFrame
+    ymax (task) = set manual maximum y axis value, if None default will be used
+        
+    Returns: 
+    tuple : (DataFrame, DataFrame)
+        session_counts: Individual counts per subject
+        summary_stats: Summary statistics of the distribution
+    """
+
+    stage_order = df['current_stage_actual'].unique()
+
+    # Group by subject and stage, and task
+    if task_col:
+        session_counts = (df.groupby(['subject_id', 'current_stage_actual', task_col], observed=True)
+                         .agg({'session': 'count'})
+                         .reset_index()
+                         .rename(columns={'session': 'num_sessions'}))
+    else:
+        session_counts = (df.groupby(['subject_id', 'current_stage_actual'], observed=True)
+                         .agg({'session': 'count'})
+                         .reset_index()
+                         .rename(columns={'session': 'num_sessions'}))
+    
+    # Create density plots
+    plt.figure(figsize=(12, 6))
+    
+    # Create distribution plot and proper normalization
+    if task_col:
+        g = sns.displot(data=session_counts, 
+                    x='num_sessions',
+                    col='current_stage_actual',
+                    row=task_col,
+                    kind='hist',
+                    bins=bins_task,
+                    height=4,
+                    aspect=1.5,
+                    stat='count',
+                    common_norm=False,
+                    kde=True)
+
+        # Adjust x-ticks and y-axis limits for all subplots
+        for ax in g.axes.flat:
+            if y_max is not None:
+                ax.set_ylim(0, y_max)
+    else:
+        g = sns.displot(data=session_counts, 
+                    x='num_sessions',
+                    col='current_stage_actual',
+                    kind='hist',
+                    bins=bins,
+                    height=4,
+                    aspect=1.5,
+                    stat='count',
+                    common_norm=False,
+                    kde=True)
+                    
+        # Adjust x-ticks and y-axis limits for all subplots
+        for ax in g.axes.flat:
+            # Calculate bin edges
+            edges = [rect.get_x() for rect in ax.patches] + [ax.patches[-1].get_x() + ax.patches[-1].get_width()]
+            
+            # Set x-ticks to bin edges
+            ax.set_xticks(edges)
+            ax.tick_params(axis='x', rotation=45)
+            
+            if y_max is not None:
+                ax.set_ylim(0, y_max)
+    
+    if task_col:
+        plt.suptitle('Distribution of Session Counts by Stage and Task', y=1.02)
+    else:
+        plt.suptitle('Distribution of Session Counts by Stage', y=1.02)
+    
+    # Add more detailed statistics
+    if task_col:
+        summary_stats = (session_counts.groupby(['current_stage_actual', task_col], observed=True)
+                        .agg({
+                            'num_sessions': ['count', 'mean', 'std', 'min', 'max', 
+                                           lambda x: x.quantile(0.25),
+                                           lambda x: x.quantile(0.75)]
+                        })
+                        .round(2))
+    else:
+        summary_stats = (session_counts.groupby('current_stage_actual', observed=True)
+                        .agg({
+                            'num_sessions': ['count', 'mean', 'std', 'min', 'max',
+                                           lambda x: x.quantile(0.25),
+                                           lambda x: x.quantile(0.75)]
+                        })
+                        .round(2))
+    
+    summary_stats.columns = ['num_subjects', 'mean_sessions', 'std_sessions', 
+                           'min_sessions', 'max_sessions', 'q25_sessions', 'q75_sessions']
+    summary_stats = summary_stats.reset_index()
+    
+    return session_counts, summary_stats
+
+def split_by_session_threshold(df, session_counts, threshold=None, task_col=None):
+    """ 
+    Split DataFrame based on session count Threshold in STAGE_1
+
+    Params:
+
+    df: DataFrame containing all data
+    session counts: DataFrame containing session counts per subject_id/stage/task
+    threshold: int (optional) based off of prior session count visualization
+    task_col: str (optional) for task DataFrame specification 
+
+    Returns:
+
+    tuple: (DataFrame, DataFrame, int): 
+            slow_df: DataFrame with subjects above threshold
+            fast_df: DataFrame with subjects below threshold
+            threshold_value: threshold (int) used for splitting 
+    """ 
+
+    # Get Stage 1 counts
+    stage_n_counts = session_counts[
+        session_counts['current_stage_actual'] == 'STAGE_FINAL'
+    ].copy()
+
+    # For task DataFrame average across tasks for Stage 1
+    if task_col:
+        stage_n_counts = (stage_n_counts.groupby('subject_id')['num_sessions'].mean().reset_index())
+
+    # Use median if no threshold is provided
+    if threshold is None:
+        threshold_value = stage_n_counts['num_sessions'].median()
+    else:
+        threshold_value = threshold
+
+    # Get subject_ids below and above threshold
+    slow_subjects = stage_n_counts[stage_n_counts['num_sessions'] >= threshold_value]['subject_id'].unique()
+
+    fast_subjects = stage_n_counts[stage_n_counts['num_sessions'] < threshold_value]['subject_id'].unique()
+
+    # Split DataFrame
+    slow_df = df[df['subject_id'].isin(slow_subjects)].copy()
+    fast_df = df[df['subject_id'].isin(fast_subjects)].copy()
+
+    # Summary stats
+    print(f'Threshold value: {threshold_value:.2f} sessions')
+    print(f'Number of slow learners {len(slow_subjects)}')
+    print(f'Number of fast learners {len(fast_subjects)}')
+
+    return slow_df, fast_df, threshold_value
+
+def analyze_splits(df, task_col=None, threshold=None, **kwargs):
+    """
+    Analyze session distributions for both slow and fast session count DataFrames
+
+    params:
+
+    df: DataFrame in original analyze_sessions function
+    task_col: str (optional) for task-specific DataFrame
+    threshold: int (optional) threshold for split calculation
+    **kwargs: additional args
+
+    Returns:
+    tuple: (dict, dict): DataFrames and stats for slow and fast learners
+    """ 
+
+    # First get session counts
+    session_counts, stats = analyze_session_distribution(df, task_col=task_col, **kwargs)
+    
+    # Split the data
+    slow_df, fast_df, threshold_value = split_by_session_threshold(
+        df, session_counts, threshold=threshold, task_col=task_col
+    )
+    
+    # Analyze both splits
+    slow_counts, slow_stats = analyze_session_distribution(slow_df, task_col=task_col, **kwargs)
+    fast_counts, fast_stats = analyze_session_distribution(fast_df, task_col=task_col, **kwargs)
+    
+    return {
+        'slow': {'df': slow_df, 'counts': slow_counts, 'stats': slow_stats},
+        'fast': {'df': fast_df, 'counts': fast_counts, 'stats': fast_stats},
+        'threshold': threshold_value
+    }
