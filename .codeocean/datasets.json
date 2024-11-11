@@ -1,0 +1,13 @@
+{
+	"version": 1,
+	"attached_datasets": [
+		{
+			"id": "1a634577-ddf1-4d9d-8655-426170206bd9",
+			"mount": "filtered_data_session"
+		},
+		{
+			"id": "4ad1364f-6f67-494c-a943-1e957ab574bb",
+			"mount": "foraging_nwb_bonsai_processed"
+		}
+	]
+}
