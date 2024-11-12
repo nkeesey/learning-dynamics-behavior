@@ -1,0 +1,6 @@
+environment_version: 1
+credentials:
+- type: general
+  id: CcrzwXhr8YItwvhs
+  description: single_trial_token
+  value: CUSTOM_KEY
