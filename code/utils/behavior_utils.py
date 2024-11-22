@@ -67,7 +67,7 @@ def filter_by_group_size(df, group_col='subject_id', max_rows=None, category_col
 def filter_by_column(df: pd.DataFrame, column: str) -> dict:
     """ 
     Input a DataFrame and output a dictionary containing dataframes containing unique values of 
-    selected column
+    selected column and new sessions indices
 
     Params: 
     df (DataFrame): Input Dataframe
@@ -84,8 +84,17 @@ def filter_by_column(df: pd.DataFrame, column: str) -> dict:
 
     unique_values = df[column].unique()
 
-    # Create dictionary with splits = unique values in selected column 
-    split_dfs = {value: df[df[column] == value].copy() for value in unique_values}
+    # Initialize split dictionary 
+    split_dfs = {}
+
+    for value in unique_values:
+        # Filter for current value
+        subset = df[df[column] == value].copy()
+
+        # Group by subject_id and reset session for each group
+        subset['reset_sessions'] = subset.groupby('subject_id').cumcount() + 1
+
+        split_dfs[value] = subset
 
     return split_dfs
 
