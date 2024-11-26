@@ -305,3 +305,22 @@ def analyze_splits(df, task_col=None, threshold=None, **kwargs):
         'fast': {'df': fast_df, 'counts': fast_counts, 'stats': fast_stats},
         'threshold': threshold_value
     }
+
+    def add_session_column(df):
+        """ 
+        Add session column for each subject_id based on session_date column
+
+        Params: 
+        df (DataFrame): Input DataFrame with subject_id and session_date columns
+
+        Returns: 
+        df (DataFrame): Modified DataFrame with 'session' column
+        """ 
+
+        # Sort by session date and subject_id
+        df_sorted = df.sort_values(['subject_id', 'session_date'])
+
+        # Create session column 
+        df_sorted['session'] = df_sorted.groupby('subject_id').cumcount() + 1
+
+        return df_sorted
