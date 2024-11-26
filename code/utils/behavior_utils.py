@@ -98,9 +98,9 @@ def filter_by_column(df: pd.DataFrame, column: str) -> dict:
 
     return split_dfs
 
-def merge_dataframes_subject_id(df1, df2):
+def merge_dataframes_subject_id(df1, df2, column='session_date'):
     """ 
-    Merge two DataFrames on subject_id and session_date columns
+    Merge two DataFrames on subject_id and n column
 
     Params:
 
@@ -111,7 +111,7 @@ def merge_dataframes_subject_id(df1, df2):
     merged_df (DataFrame): Merged DataFrame
     """
 
-    merged_df = pd.merge(df1, df2, on=['subject_id', 'session_date'], how='inner')
+    merged_df = pd.merge(df1, df2, on=['subject_id', column], how='inner')
 
     return merged_df
 
