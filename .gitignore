@@ -3,3 +3,8 @@
 .vscode
 data/temp_fip_trials
 data
+
+.env
+venv/
+
+.DS_Store
