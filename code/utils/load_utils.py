@@ -14,10 +14,6 @@ from joblib import Memory
 from datetime import datetime
 from typing import Union, List, Optional
 
-cachedir = '/root/capsule/scratch'
-memory = Memory(cachedir, verbose=0)
-
-@memory.cache
 def load_nwb_files(base_dir: str, process_data: bool = True, cachedir: str = '/root/capsule/scratch/') -> Union[dict, List]:
     """ 
     Load NWB files from base directory from prior loading in OC capsule (behavior_** subdirecories)
@@ -128,8 +124,6 @@ def load_csvs(dir: str) -> dict:
 
     return processed_csvs
 
-
-@memory.cache
 def process_single_dataset(pkl_file_path): 
     """ 
     Process single pkl dataset and extract values
