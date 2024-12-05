@@ -298,3 +298,79 @@ def delete_from_scratch(folder):
                 shutil.rmtree(file_path)
         except Exception as e:
             print('Failed to delete %s. Reason: %s' % (file_path, e))
+
+
+def process_csv_files(directory_path):
+    """
+    Process CSV files in the specified directory, extracting metadata from filenames
+    and combining them into a single DataFrame.
+    
+    Params:
+    directory_path (str): Path to the directory containing CSV files to process
+    
+    Returns:
+    pandas.DataFrame: Combined DataFrame with processed CSV files
+    """
+    def extract_metadata_from_filename(file_path):
+        """
+        Extract subject ID and session date from filename
+        
+        Params:
+        file_path (str): Path to the CSV file
+        
+        Returns:
+        tuple: (subject_id, session_date) or (None, None) if filename doesn't match pattern
+        """
+        filename = os.path.basename(file_path)
+        match = re.match(r'(\d{6})_(\d{4}-\d{2}-\d{2})\.csv$', filename)
+        return (match.group(1), match.group(2)) if match else (None, None)
+
+    # Find all CSV files in the directory
+    csv_files = glob.glob(os.path.join(directory_path, '*.csv'))
+    
+    # List to store processed DataFrames
+    dataframes = []
+    
+    # Process each CSV file
+    for file in csv_files:
+        filename = os.path.basename(file)
+        
+        # Skip files that don't match the expected filename pattern
+        if not re.match(r'\d{6}_\d{4}-\d{2}-\d{2}\.csv$', filename):
+            continue
+        
+        try:
+            # Read the CSV file
+            df = pd.read_csv(file)
+            
+            # Clean column names
+            df.columns = df.columns.str.strip()
+            df.columns = df.columns.str.replace(r'[^a-zA-Z0-9_]', '', regex=True)
+            
+            # Extract subject ID and session date
+            subject_id, session_date = extract_metadata_from_filename(file)
+            
+            # Skip files with invalid metadata
+            if subject_id is None or session_date is None:
+                print(f'Could not extract metadata from {filename}')
+                continue
+            
+            # Add metadata columns
+            df['subject_id'] = subject_id
+            df['session_date'] = session_date
+            
+            dataframes.append(df)
+        
+        except Exception as e:
+            print(f'Error processing {file}: {e}')
+    
+    # Combine all DataFrames
+    if not dataframes:
+        return pd.DataFrame()  # Return empty DataFrame if no files processed
+    
+    combined_df = pd.concat(dataframes, ignore_index=True)
+    
+    # Convert subject_id to numeric
+    combined_df['subject_id'] = pd.to_numeric(combined_df['subject_id'], errors='coerce')
+    
+    return combined_df
