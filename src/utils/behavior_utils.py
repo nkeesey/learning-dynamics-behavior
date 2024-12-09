@@ -5,6 +5,66 @@ import statsmodels.api as sm
 import os
 from scipy import stats
 import seaborn as sns
+from typing import Union, List, Dict, Optional, Tuple
+
+def clean_dataframe(df, threshold=0.8, verbose=False):
+    """
+    Clean DataFrame by removing rows containing too many np.inf, -np.inf, or np.nan values
+
+    Params:
+    df (DataFrame): Input DataFrame to clean
+    threshold (float): Between 0 and 1. Rows with more than this fraction of NaN values will be removed
+    verbose (bool): If True, prints diagnostic information
+
+    Returns:
+    DataFrame: Cleaned DataFrame with rows containing too many null values removed
+    """
+    # Store original shape
+    original_shape = df.shape
+    
+    # Replace inf values with nan
+    cleaned_df = df.replace([np.inf, -np.inf], np.nan).infer_objects(copy=False)
+    
+    # Calculate the fraction of NaN values in each row
+    nan_fraction = cleaned_df.isna().sum(axis=1) / cleaned_df.shape[1]
+    
+    # Keep rows where the fraction of NaN values is below the threshold
+    cleaned_df = cleaned_df[nan_fraction <= threshold]
+    
+    if verbose:
+        print(f"Removed {original_shape[0] - cleaned_df.shape[0]} rows with more than {threshold*100}% NaN values")
+        
+        # Print summary of remaining NaN values
+        nan_counts = cleaned_df.isna().sum()
+        print("\nRemaining NaN counts per column:")
+        print(nan_counts[nan_counts > 0].sort_values(ascending=False))
+
+    print(f"\nOriginal DataFrame shape: {original_shape}")
+    print(f"Cleaned DataFrame shape: {cleaned_df.shape}")
+
+    return cleaned_df
+
+def remove_columns(df, columns_to_remove):
+    """
+    Remove specified columns from DataFrame
+
+    Params:
+    df (DataFrame): Input DataFrame
+    columns_to_remove (str or list): Column name(s) to remove from DataFrame
+
+    Returns:
+    DataFrame: DataFrame with specified columns removed
+    """
+    # Convert single column to list
+    if isinstance(columns_to_remove, str):
+        columns_to_remove = [columns_to_remove]
+        
+    # Get list of columns that actually exist in df
+    columns_to_remove = [col for col in columns_to_remove if col in df.columns]
+    
+    # Remove columns and return
+    return df.drop(columns=columns_to_remove)
+
 
 def filter_by_group_size(df, group_col='subject_id', max_rows=None, category_col=None, category_limits=None, category_max=None):
     """ 
@@ -64,39 +124,31 @@ def filter_by_group_size(df, group_col='subject_id', max_rows=None, category_col
     
     return filtered_df
 
-def filter_by_column(df: pd.DataFrame, column: str) -> dict:
-    """ 
-    Input a DataFrame and output a dictionary containing dataframes containing unique values of 
-    selected column and new sessions indices
-
-    Params: 
-    df (DataFrame): Input Dataframe
-    column (str): column to group by and seperate DataFrame
-
-    Returns:
-    split_dfs (dict): Dictionary of dataframes sorted by given column with keys=column values
+def filter_by_column(df, column, filter_value=None, value_range=None, reset_sessions=False):
     """
-
-    if column not in df.columns:
-        raise ValueError(f'Column: {column} not in DataFrame')
-
-    # Get unique values in column 
-
-    unique_values = df[column].unique()
-
-    # Initialize split dictionary 
-    split_dfs = {}
-
-    for value in unique_values:
-        # Filter for current value
-        subset = df[df[column] == value].copy()
-
-        # Group by subject_id and reset session for each group
-        subset['reset_sessions'] = subset.groupby('subject_id').cumcount() + 1
-
-        split_dfs[value] = subset
-
-    return split_dfs
+    Filter dataframe by column value or range
+    
+    Args:
+        df: DataFrame to filter
+        column: Column name to filter on
+        filter_value: Exact value to filter for (optional)
+        value_range: Tuple of (min, max) values to filter between (optional)
+        reset_sessions: If True, reset session numbers after filtering (default False)
+    """
+    if value_range is not None:
+        min_val, max_val = value_range
+        filtered_df = df[(df[column] >= min_val) & (df[column] <= max_val)].copy()
+    elif filter_value is not None:
+        if filter_value not in df[column].unique():
+            raise ValueError(f'Value {filter_value} not found in column {column}')
+        filtered_df = df[df[column] == filter_value].copy()
+    else:
+        raise ValueError("Must provide either filter_value or value_range")
+        
+    if reset_sessions and 'session' in filtered_df.columns:
+        filtered_df['session'] = filtered_df.groupby('subject_id').cumcount() + 1
+        
+    return filtered_df
 
 def merge_dataframes_subject_id(df1, df2, column='session_date'):
     """ 
@@ -308,7 +360,7 @@ def analyze_splits(df, task_col=None, threshold=None, **kwargs):
 
 def add_session_column(df):
     """ 
-    Add session column for each subject_id based on session_date column
+    Add session column for each subject_id based on session_date column.
 
     Params: 
     df (DataFrame): Input DataFrame with subject_id and session_date columns
@@ -316,11 +368,54 @@ def add_session_column(df):
     Returns: 
     df (DataFrame): Modified DataFrame with 'session' column
     """ 
+    # Validate required columns exist
+    required_cols = ['subject_id', 'session_date']
+    if not all(col in df.columns for col in required_cols):
+        raise ValueError(f"DataFrame must contain columns: {required_cols}")
 
-    # Sort by session date and subject_id
-    df_sorted = df.sort_values(['subject_id', 'session_date'])
+    # Ensure session_date is datetime type
+    if not pd.api.types.is_datetime64_any_dtype(df['session_date']):
+        df['session_date'] = pd.to_datetime(df['session_date'])
 
-    # Create session column 
-    df_sorted['session'] = df_sorted.groupby('subject_id').cumcount() + 1
+    # Sort by subject_id, date, and any existing trial/temporal ordering
+    sort_cols = ['subject_id', 'session_date']
+    if 'trial' in df.columns:  # Add trial number if it exists
+        sort_cols.append('trial')
+    
+    df_sorted = df.sort_values(sort_cols)
+
+    # Create session column based on unique dates
+    df_sorted['new_session'] = df_sorted.groupby('subject_id')['session_date'].transform(
+        lambda x: pd.factorize(x)[0] + 1
+    )
 
     return df_sorted
+
+def analyze_column_distribution(df, column):
+    """
+    Analyze the distribution of values in a column of a DataFrame
+
+    Params:
+    df (DataFrame): Input DataFrame to analyze
+    column (str): Name of column to analyze
+
+    Returns:
+    dict: Dictionary containing value counts and statistics
+    """
+    if column not in df.columns:
+        raise ValueError(f"Column '{column}' not found in DataFrame")
+
+    value_counts = df[column].value_counts()
+    percentages = df[column].value_counts(normalize=True) * 100
+
+    most_common = (value_counts.index[0], value_counts.iloc[0])
+    least_common = (value_counts.index[-1], value_counts.iloc[-1])
+
+    return {
+        'value_counts': value_counts,
+        'percentages': percentages,
+        'total_count': len(df),
+        'unique_values': len(value_counts),
+        'most_common': most_common,
+        'least_common': least_common
+    }

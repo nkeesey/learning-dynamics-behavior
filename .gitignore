@@ -1,5 +1,7 @@
 /data/
 
+/results/
+
 .vscode
 data/temp_fip_trials
 data
