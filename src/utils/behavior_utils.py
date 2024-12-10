@@ -163,6 +163,9 @@ def merge_dataframes_subject_id(df1, df2, column='session_date'):
     merged_df (DataFrame): Merged DataFrame
     """
 
+    df1[column] = df1[column].astype('datetime64[ns]')
+    df2[column] = df2[column].astype('datetime64[ns]')
+
     merged_df = pd.merge(df1, df2, on=['subject_id', column], how='inner')
 
     return merged_df
