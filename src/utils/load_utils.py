@@ -14,6 +14,8 @@ from joblib import Memory
 from datetime import datetime
 from typing import Union, List, Dict, Optional
 
+from aind_dynamic_foraging_data_utils import nwb_utils as nu
+
 def load_nwb_files(
     base_dir: str, 
     process_data: bool = True, 
