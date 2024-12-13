@@ -57,7 +57,7 @@ def compute_foraging_choice(
         global_calc: Whether to calculate metric globally or locally by block
     
     Returns:
-        Tuple of (local_metric, global_metric) where one will be nan based on global_calc
+        Tuple of (local_metric, global_metric)
     """
     block_numbers, block_lengths, max_block_length, median_block_length = add_block_transitions_and_stats(p_reward)
 
