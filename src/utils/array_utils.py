@@ -198,8 +198,9 @@ def calculate_average_vectors(data_dict):
 
     return averages
 
+stage_sequence = ['STAGE_1', 'STAGE_2', 'STAGE_3', 'STAGE_4', 'STAGE_FINAL', 'GRADUATED']
 
-def plot_metric(data_dict, stage_sequence, ylabel='Foraging Efficiency'):
+def plot_metric(data_dict, stage_sequence=stage_sequence, ylabel='Foraging Efficiency'):
     """ 
     Plot metric over sessions to visualize changes over stages and/or tasks
 
