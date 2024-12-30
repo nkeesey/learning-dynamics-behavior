@@ -39,6 +39,8 @@ def add_block_transitions_and_stats(p_reward):
     return block_numbers, block_lengths, max_block_length, median_block_length
 
 
+# Add squared mean to computed metric? 
+
 def compute_foraging_choice(
         choice_history: Union[List, np.ndarray],
         reward_history: Union[List, np.ndarray],
