@@ -66,7 +66,12 @@ def remove_columns(df, columns_to_remove):
     return df.drop(columns=columns_to_remove)
 
 
-def filter_by_group_size(df, group_col='subject_id', max_rows=None, category_col=None, category_limits=None, category_max=None):
+def filter_by_group_size(df, 
+                         group_col='subject_id', 
+                         max_rows=None, 
+                         category_col=None, 
+                         category_limits=None, 
+                         category_max=None):
     """ 
     Filter DataFrame by number of rows globally or by specified categorical column: 
 

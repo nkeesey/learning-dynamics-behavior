@@ -198,127 +198,350 @@ def calculate_average_vectors(data_dict):
 
     return averages
 
+
+def normalize_stage_data(plot_df, n_bins=10):
+    """Normalize each stage to same number of bins, handling cases with few sessions"""
+    normalized_data = []
+    
+    for stage in plot_df['Stage'].unique():
+        stage_data = plot_df[plot_df['Stage'] == stage].copy()
+        
+        # Count unique sessions in this stage
+        unique_sessions = stage_data['Stage Session'].nunique()
+        
+        # Adjust number of bins if necessary
+        actual_bins = min(n_bins, unique_sessions)
+        
+        try:
+            bins = pd.qcut(stage_data['Stage Session'], 
+                         actual_bins, 
+                         labels=False, 
+                         duplicates='drop')
+            
+            stage_data['Normalized_Session'] = bins
+            
+            # Calculate statistics per bin
+            bin_stats = stage_data.groupby('Normalized_Session').agg({
+                'Score': ['mean', 'std', 'count'],
+                'Subject': 'nunique'
+            }).reset_index()
+            
+            # Rename columns to match expected format
+            bin_stats.columns = ['Normalized_Session', 'Mean', 'Std', 'Count', 'Subjects']
+            bin_stats['Stage'] = stage
+            
+            normalized_data.append(bin_stats)
+            
+        except ValueError:
+            # If binning fails, use session numbers directly
+            simple_stats = stage_data.groupby('Stage Session').agg({
+                'Score': ['mean', 'std', 'count'],
+                'Subject': 'nunique'
+            }).reset_index()
+            
+            # Rename columns to match expected format
+            simple_stats.columns = ['Normalized_Session', 'Mean', 'Std', 'Count', 'Subjects']
+            simple_stats['Stage'] = stage
+            
+            normalized_data.append(simple_stats)
+    
+    result = pd.concat(normalized_data, ignore_index=True)
+    return result
+
+
+def detect_outliers(plot_df, zscore_threshold=3):
+    """Detect outliers using z-score method"""
+    outliers = {}
+    for stage in plot_df['Stage'].unique():
+        stage_data = plot_df[plot_df['Stage'] == stage]['Score']
+        z_scores = scipy.stats.zscore(stage_data)
+        outlier_mask = abs(z_scores) > zscore_threshold
+        outliers[stage] = stage_data[outlier_mask]
+    return outliers
+
+
 stage_sequence = ['STAGE_1', 'STAGE_2', 'STAGE_3', 'STAGE_4', 'STAGE_FINAL', 'GRADUATED']
 
-def plot_metric(data_dict, stage_sequence=stage_sequence, ylabel='Foraging Efficiency'):
+def ci_plot_metric(data_dict, 
+                stage_sequence=stage_sequence, 
+                figsize=(20, 6),
+                ylabel='Foraging Efficiency',
+                verbose=False,
+                min_sample_threshold=5,
+                ci_level=0.95,
+                zscore_threshold=3,
+                normalize_stages=False):
     """ 
-    Plot metric over sessions to visualize changes over stages and/or tasks
+    Enhanced plotting function with outlier detection, sample size filtering, and stage normalization
 
-    Params: 
-    data_dict (dict): Dictionary containing arrays to be concatenated 
-    stage_sequence (list): Stage sequence for order of concatenation 
-    ylabel (str): Y-axis label for metric 
+    Parameters:
+    -----------
+    data_dict : dict
+        Dictionary containing arrays to be concatenated 
+    stage_sequence : list
+        Stage sequence for order of concatenation 
+    ylabel : str
+        Y-axis label for metric 
+    verbose : bool
+        Whether to print detailed statistics
+    min_sample_threshold : int
+        Minimum number of samples required for statistics calculation
+    ci_level : float
+        Confidence interval level (0-1)
+    zscore_threshold : float
+        Threshold for outlier detection
+    normalize_stages : bool
+        Whether to add normalized stage duration plot
     """
     is_stage_task = isinstance(next(iter(data_dict.keys())), tuple)
     
-    # Choose between task/stage dictionary and stage dictionary 
-    if is_stage_task:
-        tasks = list(set(task for _, task in data_dict.keys()))
-    else:
-        tasks = ['']
+    # Convert to long format DataFrame first
+    all_data = []
+    overall_session = 0
     
-    for task in tasks:
-        data = []
-        subject_data = []
-        overall_session = 0
-
-        for stage in stage_sequence:
-            if is_stage_task:
-                if (stage, task) in data_dict:
-                    stage_data = data_dict[(stage, task)]
-                else:
+    for stage in stage_sequence:
+        if is_stage_task:
+            tasks = list(set(task for s, task in data_dict.keys() if s == stage))
+            for task in tasks:
+                if (stage, task) not in data_dict:
                     continue
-            else:
-                if stage in data_dict:
-                    stage_data = data_dict[stage]
-                else:
-                    continue
-
-            num_sessions = stage_data.shape[1]
-            num_subjects = stage_data.shape[0]
+                stage_data = data_dict[(stage, task)]
+                task_name = task
+        else:
+            if stage not in data_dict:
+                continue
+            stage_data = data_dict[stage]
+            task_name = 'All Tasks'
             
-            for session in range(num_sessions):
-                session_data = stage_data[:, session]
-                mean = np.nanmean(session_data)
-                std = np.nanstd(session_data)
-                
-                data.append({
-                    'Stage': stage,
-                    'Session': overall_session,
-                    'Stage Session': session,
-                    'Mean': mean,
-                    'Std': std
-                })
-                
-                for subject in range(num_subjects):
-                    subject_data.append({
+        num_sessions = stage_data.shape[1]
+        num_subjects = stage_data.shape[0]
+        
+        for session in range(num_sessions):
+            for subject in range(num_subjects):
+                value = stage_data[subject, session]
+                if not np.isnan(value):
+                    all_data.append({
                         'Stage': stage,
-                        'Session': overall_session,
+                        'Overall Session': overall_session,
                         'Stage Session': session,
                         'Subject': subject,
-                        'Score': stage_data[subject, session]
+                        'Score': value,
+                        'Task': task_name
                     })
-
-                overall_session += 1
-
-        stage_plot_df = pd.DataFrame(data)
-        subject_plot_df = pd.DataFrame(subject_data)
-
-        plt.figure(figsize=(20, 6))
-
-        sns.scatterplot(x='Session', y='Score', data=subject_plot_df, alpha=0.2, color='grey', legend=False)
-        sns.lineplot(x='Session', y='Mean', data=stage_plot_df)
-
-        plt.fill_between(stage_plot_df['Session'], 
-                        stage_plot_df['Mean'] - stage_plot_df['Std'], 
-                        stage_plot_df['Mean'] + stage_plot_df['Std'], 
-                        alpha=0.2, color='b')
-
-        plt.xlabel('Session (across all stages)', fontsize=12)
-        plt.ylabel(ylabel, fontsize=12)
-
-        stage_boundaries = [stage_plot_df[stage_plot_df['Stage'] == stage]['Session'].min() 
-                            for stage in stage_sequence if stage in stage_plot_df['Stage'].unique()]
-        for boundary in stage_boundaries[1:]:
-            plt.axvline(x=boundary - 0.5, color='b', linestyle='--', alpha=0.5)
-
-        xticks = []
-        xticklabels = []
-        for i, stage in enumerate(stage_sequence):
-            if stage in stage_plot_df['Stage'].unique():
-                stage_sessions = stage_plot_df[stage_plot_df['Stage'] == stage]['Session']
-                stage_start = stage_sessions.min()
-                stage_end = stage_sessions.max()
-                stage_ticks = range(int(stage_start), int(stage_end) + 1, 4)
-                xticks.extend(stage_ticks)
-                xticklabels.extend(range(0, (len(stage_ticks) - 1) * 4 + 1, 4))
-
-                mid_point = (stage_start + stage_end) / 2
-                plt.text(mid_point, plt.ylim()[1], stage, horizontalalignment='center', verticalalignment='bottom')
-
-        plt.xticks(xticks, xticklabels)
-        plt.xticks(ha='right')
-
-        plt.plot([], [], color='grey', alpha=0.2, linewidth=0, marker='o', markersize=10, label='Subject Scores')
-
-        if is_stage_task:
-            plt.plot([], [], color='blue', linewidth=2, label=f'{task} Mean Score')
-        else:
-            plt.plot([], [], color='blue', linewidth=2, label='All Task Mean Score')
+            overall_session += 1
+    
+    # Convert to DataFrame
+    plot_df = pd.DataFrame(all_data)
+    
+    # Calculate statistics with data quality checks
+    stats_df = plot_df.groupby('Overall Session').agg({
+        'Score': ['mean', 'std', 'count'],
+        'Stage': 'first'
+    }).reset_index()
+    stats_df.columns = ['Overall Session', 'Mean', 'Std', 'Count', 'Stage']
+    
+    # Add data quality checks and calculations
+    stats_df['Sample_Size'] = stats_df['Count']
+    z_score = scipy.stats.norm.ppf((1 + ci_level) / 2)
+    
+    # Filter low-n sessions and calculate statistics
+    stats_df['Valid_Session'] = stats_df['Count'] >= min_sample_threshold
+    stats_df['Weighted_Mean'] = np.where(
+        stats_df['Valid_Session'],
+        stats_df['Mean'],
+        np.nan
+    )
+    
+    stats_df['CI'] = np.where(
+        stats_df['Valid_Session'],
+        (stats_df['Std'] / np.sqrt(stats_df['Count'])) * z_score,
+        np.nan
+    )
+    
+    # Add subject tracking
+    stats_df['Unique_Subjects'] = stats_df.apply(
+        lambda x: len(plot_df[(plot_df['Overall Session'] == x['Overall Session'])]['Subject'].unique()),
+        axis=1
+    )
+    
+    # Define a color palette for stages
+    stage_colors = dict(zip(stage_sequence, sns.color_palette("bright", len(stage_sequence))))
+    
+    # Create plots
+    if normalize_stages:
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(figsize[0], figsize[1]*2))
+        main_ax = ax1
+    else:
+        fig, main_ax = plt.subplots(1, 1, figsize=figsize)
+    
+    # Plot individual points
+    sns.scatterplot(data=plot_df, 
+                    x='Overall Session', 
+                    y='Score', 
+                    alpha=0.2, 
+                    color='grey', 
+                    legend=False,
+                    ax=main_ax)
+    
+    # Plot continuous mean line
+    valid_data = stats_df[stats_df['Valid_Session']]
+    main_ax.plot(valid_data['Overall Session'],
+                valid_data['Weighted_Mean'],
+                color='grey',
+                alpha=0.5,
+                label='Mean Score',
+                zorder=3,
+                linewidth=2)
+    
+    # Add colored confidence intervals by stage
+    for stage in stage_sequence:
+        if stage in stats_df['Stage'].values:
+            stage_data = stats_df[stats_df['Stage'] == stage]
+            stage_data = stage_data[stage_data['Valid_Session']]
+            color = stage_colors[stage]
+            
+            # Add confidence interval with stage-specific color
+            main_ax.fill_between(stage_data['Overall Session'],
+                               stage_data['Weighted_Mean'] - stage_data['CI'],
+                               stage_data['Weighted_Mean'] + stage_data['CI'],
+                               alpha=0.2,
+                               color=color,
+                               label=f'{stage} CI')
+    
+    # Detect stage transitions
+    stage_transitions = []
+    prev_stage = None
+    for idx, row in stats_df.iterrows():
+        if prev_stage is not None and row['Stage'] != prev_stage:
+            stage_transitions.append(idx)
+        prev_stage = row['Stage']
+    
+    # Add stage boundaries and labels
+    stage_boundaries = []
+    for stage in stage_sequence:
+        if stage in stats_df['Stage'].values:
+            stage_data = stats_df[stats_df['Stage'] == stage]
+            start_session = stage_data['Overall Session'].min()
+            end_session = stage_data['Overall Session'].max()
+            if start_session not in stage_boundaries:
+                stage_boundaries.append(start_session)
+            
+            # Add stage label with subject count
+            mid_point = (start_session + end_session) / 2
+            subject_count = len(plot_df[plot_df['Stage'] == stage]['Subject'].unique())
+            label = f"{stage}\n(n={subject_count})"
+            main_ax.text(mid_point, main_ax.get_ylim()[1], label, 
+                        horizontalalignment='center', 
+                        verticalalignment='bottom')
+    
+    # Add vertical lines at stage transitions
+    for transition in stage_transitions:
+        main_ax.axvline(x=stats_df.iloc[transition]['Overall Session'] - 0.5, 
+                       color='b', 
+                       linestyle='--', 
+                       alpha=0.5)
+    
+    # Add sample size indicator
+    scatter = main_ax.scatter(stats_df['Overall Session'],
+                            [main_ax.get_ylim()[0]] * len(stats_df),
+                            c=stats_df['Count'],
+                            cmap='viridis',
+                            alpha=0.3,
+                            s=20)
+    plt.colorbar(scatter, label='Sample Size')
+    
+    # Customize x-axis ticks
+    xticks = []
+    xticklabels = []
+    for stage in stage_sequence:
+        if stage in stats_df['Stage'].values:
+            stage_data = stats_df[stats_df['Stage'] == stage]
+            stage_sessions = range(
+                int(stage_data['Overall Session'].min()),
+                int(stage_data['Overall Session'].max()) + 1,
+                4
+            )
+            xticks.extend(stage_sessions)
+            xticklabels.extend(range(0, len(stage_sessions) * 4, 4))
+    
+    main_ax.set_xticks(xticks)
+    main_ax.set_xticklabels(xticklabels)
+    plt.setp(main_ax.get_xticklabels(), rotation=45, ha='right')
+    
+    # Labels and legend
+    main_ax.set_xlabel('Session (across all stages)', fontsize=12)
+    main_ax.set_ylabel(ylabel, fontsize=12)
+    main_ax.legend()
+    
+    if normalize_stages:
+        # Add normalized plot
+        normalized_stats = normalize_stage_data(plot_df)
         
-        plt.fill_between([], [], alpha=0.2, label='Standard Deviation')
-        plt.legend()
-
-        plt.tight_layout()
-        plt.show()
-
-        print(f"\nStatistics for {'Task: ' + task if is_stage_task else 'All Tasks'}:")
+        # Plot normalized data
         for stage in stage_sequence:
-            if stage in stage_plot_df['Stage'].unique():
-                stage_data = stage_plot_df[stage_plot_df['Stage'] == stage]
-                print(f'\n{stage}:')
-                print(f'Number of Sessions: {len(stage_data)}')
-                print(f"Mean {ylabel}: {stage_data['Mean'].mean():.2f}")
-                print(f"Standard deviation: {stage_data['Mean'].std():.2f}")
-                print(f"Min efficiency: {stage_data['Mean'].min():.2f}")
-                print(f"Max efficiency: {stage_data['Mean'].max():.2f}")
+            if stage in normalized_stats['Stage'].values:
+                stage_data = normalized_stats[normalized_stats['Stage'] == stage]
+                color = stage_colors[stage]
+                
+                # Plot mean line
+                ax2.plot(stage_data['Normalized_Session'],
+                        stage_data['Mean'],
+                        '-o',
+                        color=color,
+                        label=stage)
+                
+                # Add confidence interval with matching color
+                ci = (stage_data['Std'] / np.sqrt(stage_data['Count'])) * z_score
+                ax2.fill_between(stage_data['Normalized_Session'],
+                               stage_data['Mean'] - ci,
+                               stage_data['Mean'] + ci,
+                               alpha=0.2,
+                               color=color)
+        
+        # Customize second plot
+        ax2.set_xlabel('Normalized Session Within Stage', fontsize=12)
+        ax2.set_ylabel(ylabel, fontsize=12)
+        ax2.set_title('Normalized Stage Progression')
+        ax2.legend(title='Stage')
+        
+        # Add sample size indicator
+        scatter = ax2.scatter(normalized_stats['Normalized_Session'],
+                            [ax2.get_ylim()[0]] * len(normalized_stats),
+                            c=normalized_stats['Count'],
+                            cmap='viridis',
+                            alpha=0.3,
+                            s=20)
+        plt.colorbar(scatter, ax=ax2, label='Sample Size')
+    
+    plt.tight_layout()
+    plt.show()
+    
+    if verbose:
+        print("\nDetailed Statistics by Stage:")
+        stage_stats = plot_df.groupby('Stage').agg({
+            'Score': ['count', 'mean', 'std', lambda x: x.std()/np.sqrt(len(x)), 'min', 'max'],
+            'Subject': 'nunique'
+        }).round(3)
+        stage_stats.columns = ['N', 'Mean', 'Std', 'SEM', 'Min', 'Max', 'Subjects']
+        print(stage_stats)
+        
+        print("\nOutlier Analysis:")
+        outliers = detect_outliers(plot_df, zscore_threshold)
+        for stage, outlier_values in outliers.items():
+            if len(outlier_values) > 0:
+                print(f"\n{stage}:")
+                print(f"Number of outliers: {len(outlier_values)}")
+                print(f"Outlier values: {outlier_values.values}")
+                print(f"Percentage: {(len(outlier_values)/len(plot_df[plot_df['Stage']==stage]))*100:.1f}%")
+        
+        print("\nPerformance Summary:")
+        for stage in stage_sequence:
+            if stage in stats_df['Stage'].values:
+                stage_data = stats_df[stats_df['Stage'] == stage]
+                print(f"\n{stage}:")
+                print(f"Sessions: {len(stage_data)}")
+                print(f"Mean ± SEM: {stage_data['Weighted_Mean'].mean():.3f} ± "
+                      f"{stage_data['Weighted_Mean'].std()/np.sqrt(len(stage_data)):.3f}")
+                print(f"Subjects: {stage_data['Unique_Subjects'].max()}")
+                print(f"Sample size range: {stage_data['Count'].min()}-{stage_data['Count'].max()}")
+                print(f"Sessions below threshold: {sum(~stage_data['Valid_Session'])}")
