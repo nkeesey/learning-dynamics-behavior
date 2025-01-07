@@ -4,5 +4,50 @@
 	"options": {
 		"registry_host_arg": true,
 		"git_ask_pass": true
+	},
+	"installers": {
+		"conda": {
+			"packages": [
+				{
+					"name": "matplotlib"
+				},
+				{
+					"name": "numpy"
+				},
+				{
+					"name": "pandas"
+				},
+				{
+					"name": "scikit-learn"
+				},
+				{
+					"name": "scipy"
+				},
+				{
+					"name": "seaborn"
+				}
+			]
+		},
+		"pip": {
+			"packages": [
+				{
+					"name": "aind-dynamic-foraging-basic-analysis"
+				},
+				{
+					"name": "multiprocessing"
+				},
+				{
+					"name": "pathlib"
+				},
+				{
+					"name": "pynwb"
+				},
+				{
+					"name": "tqdm"
+				}
+			],
+			"options": {},
+			"pre_install_options": {}
+		}
 	}
 }
