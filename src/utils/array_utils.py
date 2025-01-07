@@ -199,7 +199,7 @@ def calculate_average_vectors(data_dict):
     return averages
 
 
-def normalize_stage_data(plot_df, n_bins=10):
+def normalize_stage_data(plot_df, n_bins=5):
     """Normalize each stage to same number of bins, handling cases with few sessions"""
     normalized_data = []
     
@@ -264,7 +264,7 @@ stage_sequence = ['STAGE_1', 'STAGE_2', 'STAGE_3', 'STAGE_4', 'STAGE_FINAL', 'GR
 
 def ci_plot_metric(data_dict, 
                 stage_sequence=stage_sequence, 
-                figsize=(20, 6),
+                figsize=(16, 6),
                 ylabel='Foraging Efficiency',
                 verbose=False,
                 min_sample_threshold=5,
@@ -365,7 +365,7 @@ def ci_plot_metric(data_dict,
     )
     
     # Define a color palette for stages
-    stage_colors = dict(zip(stage_sequence, sns.color_palette("bright", len(stage_sequence))))
+    stage_colors = dict(zip(stage_sequence, sns.color_palette("RdYlGn", len(stage_sequence))))
     
     # Create plots
     if normalize_stages:
@@ -378,7 +378,7 @@ def ci_plot_metric(data_dict,
     sns.scatterplot(data=plot_df, 
                     x='Overall Session', 
                     y='Score', 
-                    alpha=0.2, 
+                    alpha=0.4, 
                     color='grey', 
                     legend=False,
                     ax=main_ax)
@@ -404,7 +404,7 @@ def ci_plot_metric(data_dict,
             main_ax.fill_between(stage_data['Overall Session'],
                                stage_data['Weighted_Mean'] - stage_data['CI'],
                                stage_data['Weighted_Mean'] + stage_data['CI'],
-                               alpha=0.2,
+                               alpha=0.6,
                                color=color,
                                label=f'{stage} CI')
     
@@ -440,15 +440,6 @@ def ci_plot_metric(data_dict,
                        color='b', 
                        linestyle='--', 
                        alpha=0.5)
-    
-    # Add sample size indicator
-    scatter = main_ax.scatter(stats_df['Overall Session'],
-                            [main_ax.get_ylim()[0]] * len(stats_df),
-                            c=stats_df['Count'],
-                            cmap='viridis',
-                            alpha=0.3,
-                            s=20)
-    plt.colorbar(scatter, label='Sample Size')
     
     # Customize x-axis ticks
     xticks = []
@@ -495,23 +486,9 @@ def ci_plot_metric(data_dict,
                 ax2.fill_between(stage_data['Normalized_Session'],
                                stage_data['Mean'] - ci,
                                stage_data['Mean'] + ci,
-                               alpha=0.2,
+                               alpha=0.6,
                                color=color)
-        
-        # Customize second plot
-        ax2.set_xlabel('Normalized Session Within Stage', fontsize=12)
-        ax2.set_ylabel(ylabel, fontsize=12)
-        ax2.set_title('Normalized Stage Progression')
-        ax2.legend(title='Stage')
-        
-        # Add sample size indicator
-        scatter = ax2.scatter(normalized_stats['Normalized_Session'],
-                            [ax2.get_ylim()[0]] * len(normalized_stats),
-                            c=normalized_stats['Count'],
-                            cmap='viridis',
-                            alpha=0.3,
-                            s=20)
-        plt.colorbar(scatter, ax=ax2, label='Sample Size')
+    
     
     plt.tight_layout()
     plt.show()

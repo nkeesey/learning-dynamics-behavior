@@ -245,7 +245,9 @@ def analyze_session_distribution(df, task_col=None, bins=20, bins_task=40, y_max
         # Adjust x-ticks and y-axis limits for all subplots
         for ax in g.axes.flat:
             # Calculate bin edges
-            edges = [rect.get_x() for rect in ax.patches] + [ax.patches[-1].get_x() + ax.patches[-1].get_width()]
+            edges = [rect.get_x() for rect in ax.patches] 
+            + [ax.patches[-1].get_x() 
+            + ax.patches[-1].get_width()]
             
             # Set x-ticks to bin edges
             ax.set_xticks(edges)
