@@ -314,6 +314,18 @@ def compute_df_session_performance(nwb, df_trial):
         ],
         autowater_offered=(df_trial.auto_waterL == 1) | (df_trial.auto_waterR == 1),
     )
+
+    # Foraging choice (autowater and ignored trials excluded)
+    foraging_choice, foraging_choice_global = compute_foraging_choice(
+        choice_history=df_trial.animal_response.map({0: 0, 1: 1, 2: np.nan}).values,
+        reward_history=df_trial.rewarded_historyL | df_trial.rewarded_historyR,
+        p_reward=[
+            df_trial.reward_probabilityL.values,
+            df_trial.reward_probabilityR.values,
+        ],
+        autowater_offered=(df_trial.auto_waterL == 1) | (df_trial.auto_waterR == 1),
+        global_calc=True,
+    )
     
     # Override foraging_eff_random_seed if the nwb is converted from old bpod session
     # because in DataJoint, I already computed the foraging_eff_random_seed
@@ -350,6 +362,8 @@ def compute_df_session_performance(nwb, df_trial):
         'reward_rate': reward_rate_non_autowater_finished,
         'foraging_eff': foraging_eff,
         'foraging_eff_random_seed': foraging_eff_random_seed,
+        'foraging_choice': foraging_choice,
+        'foraging_choice_global': foraging_choice_global,
         
         'foraging_performance': foraging_eff * finished_rate,
         'foraging_performance_random_seed': foraging_eff_random_seed * finished_rate,
