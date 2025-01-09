@@ -326,7 +326,7 @@ def compute_df_session_performance(nwb, df_trial):
             df_trial.reward_probabilityR.values,
         ],
         autowater_offered=(df_trial.auto_waterL == 1) | (df_trial.auto_waterR == 1),
-        global_calc=True,
+        global_calc=None,
     )
     
     # Override foraging_eff_random_seed if the nwb is converted from old bpod session
