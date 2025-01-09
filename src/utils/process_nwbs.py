@@ -15,7 +15,9 @@ import tqdm
 
 from aind_dynamic_foraging_basic_analysis import compute_foraging_efficiency
 # Import foraging choice
-from src.learning_dynamics_behavior.metric_dev.foraging_choice.foraging_choice import compute_foraging_choice
+
+sys.path.insert(0, '/root/capsule/src/learning_dynamics_behavior/metric_dev/foraging_choice')
+from foraging_choice import compute_foraging_choice
 
 LEFT, RIGHT, IGNORE = 0, 1, 2
 
