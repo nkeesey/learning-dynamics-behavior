@@ -18,7 +18,7 @@ def run_task_env(parameter_sets, seed_start=42, n_sims=1000):
     Params:
     
     parameter_sets : pd.DataFrame
-        DataFrame containing parameter sets to test. Must include columns:
+        DataFrame containing parameter sets to test.
         'learn_rate_rew', 'learn_rate_unrew', 'forget_rate_unchosen',
         'biasL', 'softmax_inverse_temperature', 'current_stage_actual'
     seed_start : int, optional
